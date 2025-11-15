@@ -1,11 +1,11 @@
 # Bevy Build Performance Test
 
-compares the performance impact of 
-- nightly vs stable
+compares the performance impact of:
 - bevy/dynamic_linking
 - "-Zshare-generics=y",
 - CARGO_INCREMENTAL=0
 - linker = "rust-lld.exe"
+- sscache
 
 under follwoing senarios
 - clean build
