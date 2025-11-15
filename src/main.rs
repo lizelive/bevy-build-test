@@ -1,4 +1,6 @@
 use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Utc};
+use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -10,7 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 struct Scenario {
     pub linker: Option<Linker>,
     pub cache: Option<Cache>,
@@ -18,24 +20,24 @@ struct Scenario {
     pub hotpatching: Option<Hotpatching>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 enum Linker {
     RustLld,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 enum Cache {
     DisableIncremental,
     Sscache,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 enum Dynamic {
     DynamicLinking,
     ShareGenerics,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 enum Hotpatching {
     Dx,
 }
@@ -48,7 +50,7 @@ struct Code {
     pub rust_toolchain_toml: String,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize)]
 struct ScenarioTimings {
     first: Option<Duration>,
     second: Option<Duration>,
@@ -75,6 +77,35 @@ struct Workspace {
     dir: TempDir,
 }
 
+#[derive(Debug)]
+struct RunWriter {
+    path: PathBuf,
+    record: RunRecord,
+}
+
+#[derive(Debug, Serialize)]
+struct RunRecord {
+    run_id: String,
+    started_at: DateTime<Utc>,
+    scenarios: Vec<ScenarioRecord>,
+}
+
+#[derive(Debug, Serialize)]
+struct ScenarioRecord {
+    slug: String,
+    ready_marker: String,
+    payload_value: u64,
+    scenario: Scenario,
+    timings: ScenarioTimingRecord,
+}
+
+#[derive(Debug, Serialize)]
+struct ScenarioTimingRecord {
+    first_seconds: Option<f64>,
+    second_seconds: Option<f64>,
+    hotpatch_seconds: Option<f64>,
+}
+
 #[derive(Debug, Clone, Copy)]
 enum StreamKind {
     Stdout,
@@ -97,12 +128,17 @@ fn main() {
 fn run() -> Result<()> {
     let prepared = prepare_scenarios();
     println!("Benchmarking {} scenario(s)...", prepared.len());
+    let mut writer = RunWriter::create()?;
+    println!("Writing incremental results to {}", writer.path().display());
 
     for scenario in &prepared {
         println!("\n=== Scenario: {} ===", scenario.slug);
         println!("{}", scenario.scenario.describe());
         let result = run_scenario(scenario)
             .with_context(|| format!("benchmark failed for {}", scenario.slug))?;
+        writer
+            .push(scenario, &result)
+            .with_context(|| format!("failed to record results for {}", scenario.slug))?;
         report_timings(&result);
     }
 
@@ -321,6 +357,61 @@ impl Workspace {
     fn src_main_file(&self) -> PathBuf {
         self.path().join("src").join("main.rs")
     }
+}
+
+impl RunWriter {
+    fn create() -> Result<Self> {
+        let run_id = Utc::now().format("run-%Y%m%d-%H%M%S").to_string();
+        let path = Path::new("results").join(format!("{run_id}.ron"));
+        fs::create_dir_all(path.parent().unwrap())
+            .context("failed to create results directory")?;
+        let record = RunRecord {
+            run_id,
+            started_at: Utc::now(),
+            scenarios: Vec::new(),
+        };
+        Ok(Self { path, record })
+    }
+
+    fn push(&mut self, scenario: &PreparedScenario, result: &ScenarioResult) -> Result<()> {
+        let timings = ScenarioTimingRecord::from_timings(&result.timings);
+        let record = ScenarioRecord {
+            slug: scenario.slug.clone(),
+            ready_marker: scenario.ready_marker.clone(),
+            payload_value: scenario.payload_value,
+            scenario: scenario.scenario,
+            timings,
+        };
+        self.record.scenarios.push(record);
+        self.flush()
+    }
+
+    fn flush(&self) -> Result<()> {
+        let ron = ron::ser::to_string_pretty(
+            &self.record,
+            ron::ser::PrettyConfig::new().depth_limit(4),
+        )
+        .context("failed to serialize run record")?;
+        fs::write(&self.path, ron).context("failed to write results file")
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl ScenarioTimingRecord {
+    fn from_timings(timings: &ScenarioTimings) -> Self {
+        Self {
+            first_seconds: as_seconds(timings.first),
+            second_seconds: as_seconds(timings.second),
+            hotpatch_seconds: as_seconds(timings.hotpatch),
+        }
+    }
+}
+
+fn as_seconds(duration: Option<Duration>) -> Option<f64> {
+    duration.map(|d| d.as_secs_f64())
 }
 
 fn write_workspace_files(root: &Path, code: &Code) -> Result<()> {

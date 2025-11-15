@@ -50,6 +50,10 @@ your console, and print a concise timing summary per scenario. Temporary
 workspaces live under your system temp directory and are deleted automatically
 after each scenario completes.
 
+Each invocation also writes an incremental RON log to `results/run-YYYYMMDD-HHMMSS.ron`
+so you can archive or post-process timing data later. The file is updated after
+every scenario finishes.
+
 If a required tool (such as `dx` or `sccache`) is missing the corresponding
 scenario will fail with a descriptive error so you can install the dependency or
 skip those configurations.
