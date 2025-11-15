@@ -14,8 +14,6 @@ fn hello_world_system(
     mut app_exit_events: MessageWriter<bevy::app::AppExit>,
     time: Res<Time<Real>>,
 ) {
-    println!("hello world");
-    if time.elapsed() > Duration::from_secs(10) {
-        app_exit_events.write(bevy::app::AppExit::Success);
-    }
+    println!("PAYLOAD_SYSTEM_IS_READY");
+
 }

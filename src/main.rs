@@ -33,15 +33,20 @@ enum Hotpatching {
     Dx,
 }
 
+#[derive(Debug, Clone)]
+struct Code {
+    pub cargo_config_toml : String,
+    pub src_main_rs : String,
+    pub cargo_toml : String,
+    pub rust_toolchain_toml : String,
+}
+
 
 #[derive(Debug, Clone, Copy)]
-struct TestResult {
-    /// scenario
-    scenario: Scenario,
-
+struct ScenarioTimings {
     /// a clean build
     first: Option<Duration>,
-    /// second build, with small change to system
+    /// second build, with no changes to the system
     second: Option<Duration>,
     /// time it takes for hotpatch
     hotpatch: Option<Duration>,
