@@ -1,0 +1,23 @@
+(
+    run_id: "run-20251116-004513",
+    started_at: "2025-11-16T00:45:13.283334400Z",
+    scenarios: [
+        (
+            slug: "default-linker-incremental-default-dynamic-no-hotpatch",
+            ready_marker: "PAYLOAD_SYSTEM_IS_READY__default-linker-incremental-default-dynamic-no-hotpatch__b85bed2614339b3d",
+            payload_value: 4934627831867051170,
+            scenario: (
+                linker: None,
+                cache: None,
+                dynamic: None,
+                hotpatching: None,
+            ),
+            timings: (
+                first_seconds: Some(549.7255611),
+                second_seconds: Some(0.8191706),
+                modified_seconds: Some(9.3679349),
+                hotpatch_seconds: None,
+            ),
+        ),
+    ],
+)

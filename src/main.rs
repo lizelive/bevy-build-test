@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
@@ -188,6 +188,7 @@ fn run_cargo_build(workspace: &Workspace, label: &str) -> Result<Duration> {
     let start = Instant::now();
     let status = Command::new("cargo")
         .arg("build")
+        .arg("--quiet")
         .current_dir(workspace.path())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -261,10 +262,7 @@ fn run_dx_hotpatch(workspace: &Workspace, prepared: &PreparedScenario) -> Result
                 }
             }
             Ok(StreamEvent::Closed(kind)) => {
-                if let Some(status) = child
-                    .try_wait()
-                    .context("failed to poll dx serve status")?
-                {
+                if let Some(status) = child.try_wait().context("failed to poll dx serve status")? {
                     bail!("dx serve exited early ({kind:?}) with status {status}");
                 }
             }
@@ -339,7 +337,9 @@ fn forward_stream_line(kind: StreamKind, line: &str) {
 fn shutdown_process(child: &mut Child) -> Result<()> {
     if child.try_wait()?.is_none() {
         child.kill().ok();
-        child.wait().context("failed to wait for dx serve during shutdown")?;
+        child
+            .wait()
+            .context("failed to wait for dx serve during shutdown")?;
     }
     Ok(())
 }
@@ -390,8 +390,7 @@ impl RunWriter {
     fn create() -> Result<Self> {
         let run_id = Utc::now().format("run-%Y%m%d-%H%M%S").to_string();
         let path = Path::new("results").join(format!("{run_id}.ron"));
-        fs::create_dir_all(path.parent().unwrap())
-            .context("failed to create results directory")?;
+        fs::create_dir_all(path.parent().unwrap()).context("failed to create results directory")?;
         let record = RunRecord {
             run_id,
             started_at: Utc::now(),
@@ -414,11 +413,9 @@ impl RunWriter {
     }
 
     fn flush(&self) -> Result<()> {
-        let ron = ron::ser::to_string_pretty(
-            &self.record,
-            ron::ser::PrettyConfig::new().depth_limit(4),
-        )
-        .context("failed to serialize run record")?;
+        let ron =
+            ron::ser::to_string_pretty(&self.record, ron::ser::PrettyConfig::new().depth_limit(4))
+                .context("failed to serialize run record")?;
         fs::write(&self.path, ron).context("failed to write results file")
     }
 
@@ -448,12 +445,14 @@ fn write_workspace_files(root: &Path, code: &Code) -> Result<()> {
     fs::create_dir_all(root.join(".cargo"))
         .context("failed to create .cargo directory in temporary workspace")?;
 
-    fs::write(root.join("Cargo.toml"), &code.cargo_toml)
-        .context("failed to write Cargo.toml")?;
+    fs::write(root.join("Cargo.toml"), &code.cargo_toml).context("failed to write Cargo.toml")?;
     fs::write(root.join("src").join("main.rs"), &code.src_main_rs)
         .context("failed to write generated main.rs")?;
-    fs::write(root.join(".cargo").join("config.toml"), &code.cargo_config_toml)
-        .context("failed to write .cargo/config.toml")?;
+    fs::write(
+        root.join(".cargo").join("config.toml"),
+        &code.cargo_config_toml,
+    )
+    .context("failed to write .cargo/config.toml")?;
     fs::write(root.join("rust-toolchain.toml"), &code.rust_toolchain_toml)
         .context("failed to write rust-toolchain.toml")?;
 
@@ -475,22 +474,21 @@ fn enumerate_scenarios() -> Vec<Scenario> {
         Some(Dynamic::DynamicLinking),
         Some(Dynamic::ShareGenerics),
     ];
+    let hotpatches = [None];
 
     let mut scenarios = Vec::new();
     for linker in linkers {
         for cache in caches {
             for dynamic in dynamics {
-                let base = Scenario {
-                    linker,
-                    cache,
-                    dynamic,
-                    hotpatching: None,
-                };
-                scenarios.push(base);
-                scenarios.push(Scenario {
-                    hotpatching: Some(Hotpatching::Dx),
-                    ..base
-                });
+                for hotpatching in hotpatches {
+                    let base = Scenario {
+                        linker,
+                        cache,
+                        dynamic,
+                        hotpatching,
+                    };
+                    scenarios.push(base);
+                }
             }
         }
     }
@@ -651,7 +649,10 @@ fn build_cargo_config(scenario: &Scenario, slug: &str) -> String {
     if let Some(cache) = scenario.cache {
         match cache {
             Cache::DisableIncremental => env_lines.push(("CARGO_INCREMENTAL", "0")),
-            Cache::Sscache => env_lines.push(("RUSTC_WRAPPER", "sccache")),
+            Cache::Sscache => {
+                env_lines.push(("CARGO_INCREMENTAL", "0"));
+                env_lines.push(("RUSTC_WRAPPER", "sccache"));
+            }
         }
     }
 
