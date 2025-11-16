@@ -88,6 +88,7 @@ struct RunWriter {
 struct RunRecord {
     run_id: String,
     started_at: DateTime<Utc>,
+    failed: bool,
     scenarios: Vec<ScenarioRecord>,
 }
 
@@ -98,6 +99,7 @@ struct ScenarioRecord {
     payload_value: u64,
     scenario: Scenario,
     timings: ScenarioTimingRecord,
+    error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -132,20 +134,36 @@ fn run() -> Result<()> {
     println!("Benchmarking {} scenario(s)...", prepared.len());
     let mut writer = RunWriter::create()?;
     println!("Writing incremental results to {}", writer.path().display());
+    let mut failures = 0usize;
 
     for scenario in &prepared {
         println!("\n=== Scenario: {} ===", scenario.slug);
         println!("{}", scenario.scenario.describe());
-        let result = run_scenario(scenario)
-            .with_context(|| format!("benchmark failed for {}", scenario.slug))?;
-        writer
-            .push(scenario, &result)
-            .with_context(|| format!("failed to record results for {}", scenario.slug))?;
-        report_timings(&result);
+        match run_scenario(scenario)
+            .with_context(|| format!("benchmark failed for {}", scenario.slug))
+        {
+            Ok(result) => {
+                writer
+                    .push_success(scenario, &result)
+                    .with_context(|| format!("failed to record results for {}", scenario.slug))?;
+                report_timings(&result);
+            }
+            Err(err) => {
+                failures += 1;
+                eprintln!("[bench][error] {}", err);
+                writer
+                    .push_failure(scenario, &err)
+                    .with_context(|| format!("failed to log failure for {}", scenario.slug))?;
+            }
+        }
     }
 
-    println!("\nAll scenarios completed.");
-    Ok(())
+    println!("\nAll scenarios completed. Failures: {failures}.");
+    if failures == 0 {
+        Ok(())
+    } else {
+        bail!("{failures} scenario(s) failed. See results log for details.")
+    }
 }
 
 fn run_scenario(prepared: &PreparedScenario) -> Result<ScenarioResult> {
@@ -394,12 +412,13 @@ impl RunWriter {
         let record = RunRecord {
             run_id,
             started_at: Utc::now(),
+            failed: false,
             scenarios: Vec::new(),
         };
         Ok(Self { path, record })
     }
 
-    fn push(&mut self, scenario: &PreparedScenario, result: &ScenarioResult) -> Result<()> {
+    fn push_success(&mut self, scenario: &PreparedScenario, result: &ScenarioResult) -> Result<()> {
         let timings = ScenarioTimingRecord::from_timings(&result.timings);
         let record = ScenarioRecord {
             slug: scenario.slug.clone(),
@@ -407,6 +426,21 @@ impl RunWriter {
             payload_value: scenario.payload_value,
             scenario: scenario.scenario,
             timings,
+            error: None,
+        };
+        self.record.scenarios.push(record);
+        self.flush()
+    }
+
+    fn push_failure(&mut self, scenario: &PreparedScenario, error: &anyhow::Error) -> Result<()> {
+        self.record.failed = true;
+        let record = ScenarioRecord {
+            slug: scenario.slug.clone(),
+            ready_marker: scenario.ready_marker.clone(),
+            payload_value: scenario.payload_value,
+            scenario: scenario.scenario,
+            timings: ScenarioTimingRecord::empty(),
+            error: Some(format!("{error:?}")),
         };
         self.record.scenarios.push(record);
         self.flush()
@@ -431,6 +465,15 @@ impl ScenarioTimingRecord {
             second_seconds: as_seconds(timings.second),
             modified_seconds: as_seconds(timings.modified),
             hotpatch_seconds: as_seconds(timings.hotpatch),
+        }
+    }
+
+    fn empty() -> Self {
+        Self {
+            first_seconds: None,
+            second_seconds: None,
+            modified_seconds: None,
+            hotpatch_seconds: None,
         }
     }
 }
@@ -474,7 +517,7 @@ fn enumerate_scenarios() -> Vec<Scenario> {
         Some(Dynamic::DynamicLinking),
         Some(Dynamic::ShareGenerics),
     ];
-    let hotpatches = [None];
+    let hotpatches = [None, Some(Hotpatching::Dx)];
 
     let mut scenarios = Vec::new();
     for linker in linkers {

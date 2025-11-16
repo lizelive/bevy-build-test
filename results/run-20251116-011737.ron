@@ -1,0 +1,43 @@
+(
+    run_id: "run-20251116-011737",
+    started_at: "2025-11-16T01:17:37.316679300Z",
+    failed: true,
+    scenarios: [
+        (
+            slug: "default-linker-incremental-default-dynamic-no-hotpatch",
+            ready_marker: "PAYLOAD_SYSTEM_IS_READY__default-linker-incremental-default-dynamic-no-hotpatch__b85bed2614339b3d",
+            payload_value: 4934627831867051170,
+            scenario: (
+                linker: None,
+                cache: None,
+                dynamic: None,
+                hotpatching: None,
+            ),
+            timings: (
+                first_seconds: Some(575.0123283),
+                second_seconds: Some(0.8868467),
+                modified_seconds: Some(10.0616103),
+                hotpatch_seconds: None,
+            ),
+            error: None,
+        ),
+        (
+            slug: "default-linker-incremental-default-dynamic-dx-hotpatch",
+            ready_marker: "PAYLOAD_SYSTEM_IS_READY__default-linker-incremental-default-dynamic-dx-hotpatch__2dc4b4ec20d95a1a",
+            payload_value: 17865559870111885212,
+            scenario: (
+                linker: None,
+                cache: None,
+                dynamic: None,
+                hotpatching: Some(Dx),
+            ),
+            timings: (
+                first_seconds: None,
+                second_seconds: None,
+                modified_seconds: None,
+                hotpatch_seconds: None,
+            ),
+            error: Some("benchmark failed for default-linker-incremental-default-dynamic-dx-hotpatch\n\nCaused by:\n    timeout waiting for ready marker PAYLOAD_SYSTEM_IS_READY__default-linker-incremental-default-dynamic-dx-hotpatch__2dc4b4ec20d95a1a"),
+        ),
+    ],
+)

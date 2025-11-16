@@ -54,7 +54,8 @@ after each scenario completes.
 
 Each invocation also writes an incremental RON log to `results/run-YYYYMMDD-HHMMSS.ron`
 so you can archive or post-process timing data later. The file is updated after
-every scenario finishes.
+every scenario finishes, and failed scenarios are recorded with the error so the
+run can continue collecting the rest of the data.
 
 If a required tool (such as `dx` or `sccache`) is missing the corresponding
 scenario will fail with a descriptive error so you can install the dependency or
