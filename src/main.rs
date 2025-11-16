@@ -517,7 +517,7 @@ fn enumerate_scenarios() -> Vec<Scenario> {
         Some(Dynamic::DynamicLinking),
         Some(Dynamic::ShareGenerics),
     ];
-    let hotpatches = [None, Some(Hotpatching::Dx)];
+    let hotpatches = [None];
 
     let mut scenarios = Vec::new();
     for linker in linkers {
