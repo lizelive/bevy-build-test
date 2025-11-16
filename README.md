@@ -25,7 +25,9 @@ Each scenario records:
 
 1. Clean build (`cargo build` in a fresh temporary directory).
 2. Second build (`cargo build` immediately after, to capture incremental gains).
-3. Hotpatch time (only when `Hotpatch = dx`): start `dx serve --hot-patch`, wait
+3. Modified build: rewrite the generated payload to touch code, run `cargo build`
+  again, and measure the partial recompilation cost.
+4. Hotpatch time (only when `Hotpatch = dx`): start `dx serve --hot-patch`, wait
    for the ready marker, rewrite the payload constant, wait for the new
    `PAYLOAD_RANDOM_VALUE=...` line, then terminate `dx`.
 

@@ -54,6 +54,7 @@ struct Code {
 struct ScenarioTimings {
     first: Option<Duration>,
     second: Option<Duration>,
+    modified: Option<Duration>,
     hotpatch: Option<Duration>,
 }
 
@@ -103,6 +104,7 @@ struct ScenarioRecord {
 struct ScenarioTimingRecord {
     first_seconds: Option<f64>,
     second_seconds: Option<f64>,
+    modified_seconds: Option<f64>,
     hotpatch_seconds: Option<f64>,
 }
 
@@ -150,6 +152,7 @@ fn run_scenario(prepared: &PreparedScenario) -> Result<ScenarioResult> {
     let workspace = Workspace::create(prepared)?;
     let first = run_cargo_build(&workspace, "clean")?;
     let second = run_cargo_build(&workspace, "second")?;
+    let modified = run_modified_build(&workspace, prepared)?;
     let hotpatch = if prepared.scenario.hotpatching.is_some() {
         Some(run_dx_hotpatch(&workspace, prepared)?)
     } else {
@@ -161,9 +164,20 @@ fn run_scenario(prepared: &PreparedScenario) -> Result<ScenarioResult> {
         timings: ScenarioTimings {
             first: Some(first),
             second: Some(second),
+            modified: Some(modified),
             hotpatch,
         },
     })
+}
+
+fn run_modified_build(workspace: &Workspace, prepared: &PreparedScenario) -> Result<Duration> {
+    println!("[bench] Mutating source to trigger partial rebuild...");
+    apply_modified_source(workspace, prepared)?;
+    let result = run_cargo_build(workspace, "modified");
+    workspace
+        .restore_original_source(&prepared.code)
+        .context("failed to restore original source after modified build")?;
+    result
 }
 
 fn run_cargo_build(workspace: &Workspace, label: &str) -> Result<Duration> {
@@ -279,6 +293,13 @@ fn mutate_payload_constant(
     Ok((new_value, format!("PAYLOAD_RANDOM_VALUE={new_value}")))
 }
 
+fn apply_modified_source(workspace: &Workspace, prepared: &PreparedScenario) -> Result<()> {
+    let modified_value = next_payload_value(prepared.payload_value);
+    let modified_source = build_payload_main(&prepared.ready_marker, modified_value);
+    fs::write(workspace.src_main_file(), modified_source)
+        .context("failed to write modified payload source")
+}
+
 fn next_payload_value(previous: u64) -> u64 {
     let candidate = previous ^ 0xa076_1d64_78bd_642f;
     if candidate != previous {
@@ -325,10 +346,11 @@ fn shutdown_process(child: &mut Child) -> Result<()> {
 
 fn report_timings(result: &ScenarioResult) {
     println!(
-        "[bench] Results for {} -> clean={}, second={}, hotpatch={}",
+        "[bench] Results for {} -> clean={}, second={}, modified={}, hotpatch={}",
         result.slug,
         format_duration(result.timings.first),
         format_duration(result.timings.second),
+        format_duration(result.timings.modified),
         format_duration(result.timings.hotpatch)
     );
 }
@@ -356,6 +378,11 @@ impl Workspace {
 
     fn src_main_file(&self) -> PathBuf {
         self.path().join("src").join("main.rs")
+    }
+
+    fn restore_original_source(&self, code: &Code) -> Result<()> {
+        fs::write(self.src_main_file(), &code.src_main_rs)
+            .context("failed to restore original payload source")
     }
 }
 
@@ -405,6 +432,7 @@ impl ScenarioTimingRecord {
         Self {
             first_seconds: as_seconds(timings.first),
             second_seconds: as_seconds(timings.second),
+            modified_seconds: as_seconds(timings.modified),
             hotpatch_seconds: as_seconds(timings.hotpatch),
         }
     }
